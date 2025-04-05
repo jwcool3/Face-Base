@@ -1,0 +1,12 @@
+# Core dependencies
+numpy>=1.19.0
+scipy>=1.5.0
+Pillow>=7.0.0
+opencv-python>=4.5.0
+insightface>=0.6.0
+
+# Optional dependencies for advanced features
+scikit-learn>=0.24.0  # For machine learning features
+matplotlib>=3.5.0     # For visualization
+requests>=2.26.0      # For HTTP requests (if needed for scraping)
+tqdm>=4.62.0          # For progress bars
