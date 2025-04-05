@@ -1,0 +1,2 @@
+2025-04-05 18:38:38,148 - processing.face_detector - INFO - Initializing face detector with det_size=(640, 640), threshold=0.8, ctx_id=0
+2025-04-05 18:38:39,169 - processing.face_detector - INFO - Face detection model initialized successfully

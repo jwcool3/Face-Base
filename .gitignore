@@ -1,2 +1,6 @@
 config.ini
 scrapper/scraper-main.txt
+venv/
+.venv/
+__pycache__/
+*.pyc

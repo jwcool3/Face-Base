@@ -1,0 +1,10 @@
+2025-04-05 18:38:38,093 - main - INFO - Starting Face Matcher Application
+2025-04-05 18:38:38,095 - main - INFO - Configuration loaded successfully
+2025-04-05 18:38:38,096 - main - INFO - Ensured directory exists: data/database
+2025-04-05 18:38:38,096 - main - INFO - Ensured directory exists: data/images
+2025-04-05 18:38:38,097 - main - INFO - Ensured directory exists: data/cropped_faces
+2025-04-05 18:38:38,146 - main - INFO - Initializing model...
+2025-04-05 18:38:39,170 - main - INFO - Initializing view...
+2025-04-05 18:38:39,191 - main - INFO - Initializing controller...
+2025-04-05 18:38:39,192 - main - INFO - MVC components initialized successfully
+2025-04-05 18:38:39,192 - main - INFO - Starting application main loop
