@@ -212,6 +212,15 @@ class FaceEncoder:
             self.logger.info(f"Batch {batch_idx+1} processed in {elapsed:.2f}s ({speed:.2f} images/s)")
             self.logger.info(f"Found {len(face_buffer)} faces in this batch, {total_faces} total so far")
         
+        # Verify the entire database after processing
+        self.logger.info("Verifying database integrity...")
+        stats = self.verify_database()
+        if stats['total_faces'] != total_faces:
+            self.logger.warning(
+                f"Database verification found discrepancy: "
+                f"Processed {total_faces} faces but found {stats['total_faces']} in database"
+            )
+        
         self.logger.info(f"Processing complete. Encoded {total_faces} faces from {total_images} images")
         return total_faces
     
@@ -227,6 +236,13 @@ class FaceEncoder:
         Returns:
             int: Updated file count.
         """
+        if not face_buffer:
+            self.logger.warning("No face data to save")
+            return file_count
+            
+        # Ensure the database directory exists
+        os.makedirs(self.db_path, exist_ok=True)
+        
         # Determine how many files we need
         num_files = (len(face_buffer) + max_faces_per_file - 1) // max_faces_per_file
         
@@ -239,15 +255,216 @@ class FaceEncoder:
             db_file_path = os.path.join(self.db_path, db_filename)
             
             # Use atomic write pattern with temporary file
-            with tempfile.NamedTemporaryFile('w', delete=False) as tmp_file:
-                json.dump(batch, tmp_file, indent=2)
-                tmp_file.flush()
-                os.fsync(tmp_file.fileno())  # Ensure data is written to disk
+            try:
+                import tempfile
+                with tempfile.NamedTemporaryFile('w', delete=False) as tmp_file:
+                    # Serialize the face data
+                    json.dump(batch, tmp_file, indent=2)
+                    tmp_file.flush()
+                    os.fsync(tmp_file.fileno())  # Ensure data is written to disk
+                    tmp_path = tmp_file.name
+                    
+                # Rename temp file to final filename (atomic operation)
+                import shutil
+                shutil.move(tmp_path, db_file_path)
                 
-            # Rename temp file to final filename (atomic operation)
-            os.replace(tmp_file.name, db_file_path)
-            
-            self.logger.info(f"Saved {len(batch)} faces to {db_file_path}")
-            file_count += 1
-            
+                self.logger.info(f"Saved {len(batch)} faces to {db_file_path}")
+                file_count += 1
+            except Exception as e:
+                self.logger.error(f"Error saving faces to database: {e}")
+        
         return file_count
+
+    def verify_database(self):
+        """
+        Verify all database files and return statistics.
+        
+        Returns:
+            dict: Statistics about the database verification.
+        """
+        stats = {
+            'total_files': 0,
+            'valid_files': 0,
+            'total_faces': 0,
+            'corrupted_files': 0
+        }
+        
+        if not os.path.exists(self.db_path):
+            self.logger.warning(f"Database path does not exist: {self.db_path}")
+            return stats
+            
+        db_files = [f for f in os.listdir(self.db_path) if f.endswith('.json')]
+        stats['total_files'] = len(db_files)
+        
+        if not db_files:
+            self.logger.warning(f"No database files found in {self.db_path}")
+            return stats
+            
+        self.logger.info(f"Verifying {len(db_files)} database files...")
+        
+        for db_file in db_files:
+            db_file_path = os.path.join(self.db_path, db_file)
+            try:
+                with open(db_file_path, 'r') as f:
+                    data = json.load(f)
+                    if isinstance(data, list):
+                        faces_count = len(data)
+                        stats['total_faces'] += faces_count
+                        stats['valid_files'] += 1
+                        self.logger.debug(f"Verified {db_file}: {faces_count} faces")
+                    else:
+                        stats['corrupted_files'] += 1
+                        self.logger.error(f"Invalid data format in {db_file}")
+            except Exception as e:
+                stats['corrupted_files'] += 1
+                self.logger.error(f"Error verifying {db_file}: {e}")
+        
+        # Log verification results
+        self.logger.info(
+            f"Database verification complete:\n"
+            f"- Total files: {stats['total_files']}\n"
+            f"- Valid files: {stats['valid_files']}\n"
+            f"- Total faces: {stats['total_faces']}\n"
+            f"- Corrupted files: {stats['corrupted_files']}"
+        )
+        
+        return stats
+
+    def _process_image_batch(self, face_encoder, image_files, min_face_size, skip_existing, move_processed):
+        """Process a batch of images and return statistics."""
+        batch_stats = {
+            'processed_images': 0,
+            'faces_found': 0,
+            'faces_added': 0,
+            'skipped_images': 0,
+            'error_images': 0
+        }
+        
+        # Collect all face data for batch saving
+        face_data_buffer = []
+        
+        for img_path in image_files:
+            try:
+                # Normalize path
+                img_path = os.path.normpath(img_path)
+                
+                # Check if file exists
+                if not os.path.isfile(img_path):
+                    self.logger.warning(f"File does not exist: {img_path}")
+                    batch_stats['error_images'] += 1
+                    continue
+                
+                # Skip if already processed and skip_existing is True
+                if skip_existing and self._is_face_in_database(img_path):
+                    batch_stats['skipped_images'] += 1
+                    continue
+                    
+                # Process the image
+                _, face_data_list = face_encoder.process_image(img_path)
+                batch_stats['processed_images'] += 1
+                
+                if face_data_list:
+                    # Filter faces by size if needed
+                    if min_face_size > 0:
+                        face_data_list = [f for f in face_data_list if self._check_face_size(f, min_face_size)]
+                    
+                    # Add faces to buffer
+                    face_data_buffer.extend(face_data_list)
+                    
+                    batch_stats['faces_found'] += len(face_data_list)
+                    batch_stats['faces_added'] += len(face_data_list)
+                else:
+                    # No faces found
+                    if move_processed:
+                        try:
+                            # Create the no_faces directory in the same directory as the image
+                            img_dir = os.path.dirname(img_path)
+                            img_filename = os.path.basename(img_path)
+                            no_faces_dir = os.path.join(img_dir, "no_faces")
+                            os.makedirs(no_faces_dir, exist_ok=True)
+                            
+                            # Construct destination path
+                            dest_path = os.path.join(no_faces_dir, img_filename)
+                            
+                            # Remove destination if it already exists
+                            if os.path.exists(dest_path):
+                                os.remove(dest_path)
+                                
+                            # Try copying instead of moving to avoid cross-device issues
+                            import shutil
+                            shutil.copy2(img_path, dest_path)
+                            # After successful copy, remove the original
+                            if os.path.exists(dest_path):
+                                os.remove(img_path)
+                        except Exception as e:
+                            self.logger.error(f"Error handling file {img_path}: {e}")
+            except Exception as e:
+                self.logger.error(f"Error processing image {img_path}: {e}")
+                batch_stats['error_images'] += 1
+        
+        # Save the collected face data to database
+        if face_data_buffer:
+            try:
+                # Generate a timestamp-based filename
+                import time
+                timestamp = int(time.time())
+                db_filename = f"face_data_batch_{timestamp}.json"
+                db_file_path = os.path.join(self.db_path, db_filename)
+                
+                # Save using atomic write pattern
+                with tempfile.NamedTemporaryFile('w', delete=False) as tmp_file:
+                    json.dump(face_data_buffer, tmp_file, indent=2)
+                    tmp_file.flush()
+                    os.fsync(tmp_file.fileno())
+                    tmp_path = tmp_file.name
+                
+                # Rename temp file to final filename (atomic operation)
+                shutil.move(tmp_path, db_file_path)
+                
+                self.logger.info(f"Saved {len(face_data_buffer)} faces to {db_file_path}")
+                
+                # Verify the saved file
+                self._verify_database_file(db_file_path, len(face_data_buffer))
+            except Exception as e:
+                self.logger.error(f"Error saving face data to database: {e}")
+                batch_stats['faces_added'] = 0
+        
+        return batch_stats
+        
+    def _is_face_in_database(self, img_path):
+        """Check if an image has already been processed and exists in the database."""
+        try:
+            # Look for any database file containing this image path
+            for db_file in os.listdir(self.db_path):
+                if not db_file.endswith('.json'):
+                    continue
+                    
+                db_file_path = os.path.join(self.db_path, db_file)
+                try:
+                    with open(db_file_path, 'r') as f:
+                        data = json.load(f)
+                        if any(face['image_source'] == img_path for face in data):
+                            return True
+                except Exception:
+                    continue
+            return False
+        except Exception:
+            return False
+            
+    def _verify_database_file(self, db_file_path, expected_faces):
+        """Verify that a database file was saved correctly."""
+        try:
+            with open(db_file_path, 'r') as f:
+                data = json.load(f)
+                actual_faces = len(data)
+                if actual_faces != expected_faces:
+                    self.logger.warning(
+                        f"Database verification failed for {db_file_path}: "
+                        f"Expected {expected_faces} faces, found {actual_faces}"
+                    )
+                else:
+                    self.logger.info(f"Database file {db_file_path} verified successfully")
+                return actual_faces == expected_faces
+        except Exception as e:
+            self.logger.error(f"Error verifying database file {db_file_path}: {e}")
+            return False

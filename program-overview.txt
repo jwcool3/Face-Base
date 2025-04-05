@@ -1,0 +1,266 @@
+# Face Matcher: Program Overview and User Guide
+
+## Introduction
+
+Face Matcher is a comprehensive application for detecting, processing, and matching faces across image collections. It combines advanced facial recognition technology with web scraping capabilities to help users build and search face databases efficiently.
+
+This guide provides a complete overview of the application's features and detailed instructions for getting the most out of each component.
+
+## Key Features
+
+### 1. Face Detection and Analysis
+- Detect faces in images with high accuracy
+- Extract facial features including landmarks, age, and gender estimates
+- Process individual images or entire directories in batches
+
+### 2. Face Matching
+- Match detected faces against a database of previously processed faces
+- Filter matches based on pose, orientation, and similarity thresholds
+- View side-by-side comparisons with detailed match information
+
+### 3. Web Scraping
+- Crawl websites to automatically collect images
+- Download and organize images in configurable batches
+- Process downloaded images to extract faces for the database
+
+### 4. Database Management
+- Maintain a searchable database of face embeddings and metadata
+- View processing history and batch information
+- Filter and organize faces by source, features, or other criteria
+
+## System Requirements
+
+- **Operating System**: Windows, macOS, or Linux
+- **Python**: Version 3.7 or higher
+- **Dependencies**: NumPy, OpenCV, InsightFace, TkInter, etc. (see requirements.txt)
+- **Storage**: Sufficient space for face databases and image collections
+- **Recommended**: GPU support for accelerated face detection and processing
+
+## Installation
+
+1. Clone or download the Face Matcher repository
+2. Install dependencies:
+   ```
+   pip install -r requirements.txt
+   ```
+3. Run the application:
+   ```
+   python main.py
+   ```
+
+## Application Structure
+
+The application follows a clean, modular architecture using the Model-View-Controller (MVC) pattern:
+
+```
+face-matcher/
+├── config.ini                 # Configuration file
+├── main.py                    # Application entry point
+├── gui/                       # User interface (View)
+├── processing/                # Face detection and matching (Model)
+├── scraper/                   # Web scraping functionality
+└── utils/                     # Helper functions
+```
+
+At runtime, these additional directories are created:
+
+```
+data/
+├── database/                  # Face database files
+├── images/                    # Source images
+│   ├── faces/                 # Images with detected faces
+│   └── no_faces/              # Images without faces
+├── cropped_faces/             # Extracted face images
+└── downloaded_images/         # Images from web scraper
+```
+
+## Using the Application
+
+### Main Interface
+
+The application window is divided into three main sections:
+- **Left Panel**: Displays the uploaded image with detected faces
+- **Center Panel**: Shows match information and details
+- **Right Panel**: Displays the matched faces from the database
+
+The top toolbar contains buttons for key operations:
+- Upload Image
+- Match Face
+- Filter controls
+- Navigation buttons
+
+Additionally, the menu bar provides access to:
+- File operations
+- Tools including the Web Scraper
+- Settings and configuration options
+
+### Basic Workflow
+
+#### 1. Building Your Face Database
+
+Before matching faces, you need to build a database:
+
+**Option 1: Process Existing Images**
+1. Organize your images in a folder
+2. Use the Face Encoder to process these images
+3. Detected faces will be stored in the database
+
+**Option 2: Use the Web Scraper**
+1. Select **Tools → Web Scraper** from the menu
+2. Configure and run the scraper to download images
+3. Process the downloaded images to extract faces
+
+#### 2. Finding Matches
+
+1. Click "Upload Image" to select an image containing a face
+2. The application will detect and display the largest face
+3. Click "Match Face" to find similar faces in the database
+4. Browse through matches using the navigation buttons
+5. View match details in the center panel
+
+### Advanced Features
+
+#### Face Detection Controls
+
+- **Filter by Pose**: Only show faces with similar head orientation
+- **Filter Forward-Facing**: Only show faces looking directly toward the camera
+
+#### Visualization Options
+
+- **Landmarks Overlay**: Display facial landmarks on the images
+- **Age/Gender Overlay**: Show estimated age and gender information
+
+#### Web Scraper
+
+The integrated web scraper provides a powerful way to build your face database:
+1. Start with a website URL
+2. Configure crawling and downloading options
+3. Process downloaded images automatically
+4. Track and manage scraped batches in the history
+
+For detailed instructions on using the web scraper, see the [Web Scraper User Guide](WEB_SCRAPER_GUIDE.md).
+
+## Configuration
+
+All application settings can be customized in the `config.ini` file:
+
+```ini
+[Paths]
+DatabaseFolder = data/database
+ImageFolder = data/images
+CroppedFaceFolder = data/cropped_faces
+DownloadFolder = data/downloaded_images
+
+[FaceDetection]
+DetectionThreshold = 0.8
+DetectionSize = 640
+UseGPU = True
+GPUId = 0
+
+[FaceMatching]
+SimilarityThreshold = 0.6
+TopMatches = 10
+ForwardFacingThreshold = 20
+
+[GUI]
+CanvasWidth = 500
+CanvasHeight = 500
+
+[Scraper]
+StartURL = https://example.com
+StateFile = data/crawler_state.json
+MaxPagesToVisit = 1000
+
+[Crawler]
+UserAgent = Mozilla/5.0...
+RequestDelay = 0.5
+MaxRetries = 3
+Timeout = 30
+
+[Downloader]
+ConcurrentDownloads = 20
+RetryCount = 3
+Timeout = 30
+```
+
+## Troubleshooting
+
+### Common Issues
+
+1. **No faces detected**
+   - Ensure the image contains clearly visible faces
+   - Try adjusting the detection threshold in config.ini
+   - Increase the image resolution if faces are too small
+
+2. **No matches found**
+   - Check if your database contains faces (shown in the status bar)
+   - Try adjusting the similarity threshold
+   - Ensure the face is clearly visible in the uploaded image
+
+3. **Slow performance**
+   - Large databases may cause slower matching
+   - Consider using a computer with GPU support
+   - Break up large operations into smaller batches
+
+### Logging
+
+The application maintains detailed logs in the `logs` directory. These logs can be helpful for diagnosing issues. Log files are named with timestamps and component names (e.g., `20230401_123456_face_detector.log`).
+
+## Best Practices
+
+1. **Image Quality**: Higher resolution images yield better results
+2. **Face Position**: Front-facing images with good lighting work best
+3. **Database Organization**: Group related faces in labeled batches
+4. **Regular Updates**: Add new images to keep your database current
+5. **Batch Processing**: Process images in batches for efficiency
+
+## Technical Deep Dive
+
+### Face Detection and Encoding
+
+The application uses the InsightFace framework for face detection and feature extraction:
+
+1. **Detection**: Locates faces in images and extracts bounding boxes
+2. **Landmark Detection**: Identifies 106 facial landmarks
+3. **Feature Extraction**: Computes a 512-dimensional embedding vector
+4. **Metadata Extraction**: Estimates age, gender, and pose
+
+### Matching Algorithm
+
+Face matching uses a combination of techniques:
+
+1. **Cosine Similarity**: Measures the angular similarity between face embeddings
+2. **Pose Filtering**: Optionally filters results based on head orientation
+3. **Forward-Facing Detection**: Identifies faces looking directly at the camera
+
+### Web Scraper Architecture
+
+The web scraper is built with asynchronous processing for efficiency:
+
+1. **Crawler**: Asynchronously explores web pages to find image URLs
+2. **Downloader**: Downloads images in parallel with connection pooling
+3. **Processor**: Extracts faces and updates the database
+4. **History Tracker**: Maintains records of scraping operations
+
+## Legal and Ethical Considerations
+
+When using Face Matcher, please be mindful of:
+
+1. **Privacy**: Face data may be subject to privacy regulations
+2. **Consent**: Ensure you have proper consent for the images you process
+3. **Copyright**: Be respectful of copyright when collecting images
+4. **Data Security**: Protect your face database appropriately
+
+## Support and Development
+
+For technical support or to contribute to development:
+
+1. Check the documentation and troubleshooting sections
+2. Consult the logs for detailed error information
+3. Refer to the project repository for development guidelines
+
+## Conclusion
+
+Face Matcher provides powerful tools for face detection, processing, and matching. By following this guide and using best practices, you can effectively build and search face databases for a variety of applications.
+
+Remember to use this technology responsibly and ethically, respecting privacy and applicable regulations.

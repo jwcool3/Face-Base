@@ -240,9 +240,27 @@ class FaceMatcherController:
         self.display_match_results()
         
     def show_scraper_dialog(self):
-        """Show the web scraper dialog."""
-        self.logger.info("Opening web scraper dialog")
-        ScraperDialog(self.view.root, scrape_and_download)
+            """Show the web scraper dialog."""
+            self.logger.info("Opening web scraper dialog")
+            from gui.scraper_dialog import ScraperDialog
+            from scraper.main import scrape_and_download
+            from processing.face_encoder import FaceEncoder
+            
+            # Create processor callback
+            def process_images(folder, min_face_size, batch_size, skip_existing, move_processed):
+                # Get database and cropped face folders from config
+                config = self.model.config
+                db_path = config.get('Paths', 'DatabaseFolder', fallback='data/database')
+                cropped_face_folder = config.get('Paths', 'CroppedFaceFolder', fallback='data/cropped_faces')
+                
+                # Initialize face encoder
+                face_encoder = FaceEncoder(folder, db_path, cropped_face_folder)
+                
+                # Process images
+                return face_encoder.encode_faces(batch_size)
+            
+            # Open the dialog
+            ScraperDialog(self.view.root, scrape_and_download, process_images)
     
     @staticmethod
     def overlay_landmarks(image, landmarks):

@@ -40,6 +40,22 @@ def main():
         logger.info("Initializing model...")
         model = FaceMatcherModel()
         
+        
+        # Add this to main.py right after loading the model
+        logger.info(f"Database path: {config.get('Paths', 'DatabaseFolder')}")
+        logger.info(f"Checking database files...")
+        db_path = config.get('Paths', 'DatabaseFolder')
+        if os.path.exists(db_path):
+            db_files = [f for f in os.listdir(db_path) if f.endswith('.json')]
+            logger.info(f"Found {len(db_files)} database files")
+            for db_file in db_files:
+                file_path = os.path.join(db_path, db_file)
+                file_size = os.path.getsize(file_path)
+                logger.info(f"  {db_file}: {file_size} bytes")
+        else:
+            logger.warning(f"Database path does not exist: {db_path}")
+            os.makedirs(db_path, exist_ok=True)
+                
         # Create view
         logger.info("Initializing view...")
         view = FaceMatcherView(root)

@@ -1,0 +1,200 @@
+# Web Scraper User Guide
+
+## Introduction
+
+The Face Matcher application includes a powerful web scraping component that allows you to collect images from websites and automatically process them to build your face database. This guide explains how to use the web scraper effectively.
+
+## Accessing the Web Scraper
+
+1. Launch the Face Matcher application
+2. Click on **Tools → Web Scraper** in the menu bar
+3. The Web Scraper dialog will open with three tabs:
+   - **Crawl & Download**: Configure and start web crawling and image downloading
+   - **Process Images**: Process downloaded images to extract faces
+   - **History**: View and manage previous scraping batches
+
+## Crawling and Downloading Images
+
+### Basic Workflow
+
+1. In the **Crawl & Download** tab, enter a URL in the "Start URL" field
+2. Enter a name for this batch of images (or click "Generate" to create one automatically)
+3. Configure options as needed
+4. Click "Start Scraper" to begin the process
+
+### Options Explained
+
+- **Start URL**: The website URL to start crawling from
+- **Batch Name**: Name to identify this set of images (useful for organization)
+- **Max Pages**: Maximum number of web pages to crawl (limit this to avoid excessive crawling)
+- **Max Images**: Maximum number of images to download
+- **Batch Size**: Number of images to download in one batch (helps manage memory usage)
+- **Skip Crawling**: Use previously found image URLs instead of crawling again
+- **Skip Downloading**: Find image URLs but don't download them
+- **Automatically process images**: Process images to detect faces immediately after download
+
+### Crawling Process
+
+The scraper works in two phases:
+1. **Crawling**: It visits web pages starting from the URL you provide, following links to find images
+2. **Downloading**: It downloads the found images to your computer
+
+The progress is displayed in the log area at the bottom of the dialog. When complete, you'll see a summary of the results.
+
+## Processing Downloaded Images
+
+### Automatic Processing
+
+If you selected "Automatically process images after download," the scraper will:
+1. Finish downloading images
+2. Switch to the Process tab
+3. Begin processing images to detect and extract faces
+4. Add detected faces to your database
+
+### Manual Processing
+
+To process images manually:
+1. Go to the **Process Images** tab
+2. Verify or change the image folder path
+3. Configure processing options
+4. Click "Process Images" to begin face detection and extraction
+
+### Processing Options
+
+- **Minimum Face Size**: Smallest face size (in pixels) to detect
+- **Skip existing images**: Avoid re-processing images that have already been processed
+- **Move processed images**: Organize images into folders based on whether faces were found
+- **Process in batches**: Process images in smaller batches to manage memory usage
+
+### Processing Statistics
+
+During and after processing, you'll see statistics including:
+- Total images found
+- Number of images processed
+- Number of faces detected
+- Number of faces added to the database
+- Number of images skipped or with errors
+
+## Managing Scraping History
+
+The **History** tab shows a record of your previous scraping operations:
+
+- **Date**: When the scraping was performed
+- **Batch Name**: Name of the batch
+- **Images**: Number of images found/downloaded
+- **Faces**: Number of faces detected
+- **Status**: Current status of the batch
+
+### History Actions
+
+- **Double-click** on a batch to see detailed information
+- Click **Process Selected** to process or re-process a batch
+- Click **Delete Selected** to remove the history entry (this doesn't delete the actual images)
+- Click **Refresh** to update the history list
+
+## Best Practices
+
+1. **Start with specific URLs**: Target websites that are likely to contain the types of faces you're looking for
+2. **Use meaningful batch names**: This helps you organize and track your image collections
+3. **Limit crawling depth**: Set reasonable limits for Max Pages to avoid excessive crawling
+4. **Be patient with large batches**: Processing many images can take time
+5. **Check results regularly**: Review the detected faces to ensure quality
+
+## Troubleshooting
+
+### Common Issues
+
+- **Crawling stops or is too slow**: Try reducing Max Pages or using a more specific starting URL
+- **Few faces detected**: Check that the images actually contain detectable faces and adjust the Minimum Face Size if needed
+- **Processing errors**: Check the log for specific error messages. Common issues include:
+  - Invalid image formats
+  - Corrupted download files
+  - Insufficient memory for large batch sizes
+- **No matches found after adding faces**: Verify that the face detection is working correctly by checking the "cropped_faces" directory
+
+### Performance Tips
+
+- **Reduce batch sizes** when working with large image collections
+- **Close other applications** when processing many images
+- **Use a machine with a GPU** for significantly faster face detection
+- **Schedule large operations** during times when you don't need to use the computer
+- **Clear temporary files** occasionally to free up disk space
+
+## Technical Details
+
+### Where Files Are Stored
+
+- **Downloaded images**: Located in the folder specified in the configuration (default: `data/downloaded_images/[batch_name]`)
+- **Crawling state**: Saved in `data/crawler_state.json`
+- **Batch history**: Stored in `data/database/history/`
+- **Face database**: Located in the database folder specified in configuration (default: `data/database/`)
+- **Cropped faces**: Stored in the cropped faces folder (default: `data/cropped_faces/`)
+
+### Command-Line Usage
+
+The web scraper can also be run from the command line for automated or scheduled tasks:
+
+```bash
+python -m scraper.main --url https://example.com --max-pages 100 --output-dir data/my_images --process
+```
+
+Common command-line options:
+- `--url`: Starting URL for crawling
+- `--max-pages`: Maximum number of pages to crawl
+- `--max-images`: Maximum number of images to download
+- `--batch-size`: Batch size for downloading
+- `--output-dir`: Directory to save downloaded images
+- `--skip-crawl`: Skip crawling and use existing state file
+- `--skip-download`: Skip downloading and only crawl
+- `--process`: Process downloaded images after download
+- `--log-level`: Logging level (DEBUG, INFO, WARNING, ERROR)
+
+## Legal and Ethical Considerations
+
+When using the web scraper, please keep in mind:
+
+1. **Respect website terms of service**: Some websites prohibit automated scraping
+2. **Be considerate of server load**: Use reasonable crawling speeds and limits
+3. **Respect copyright**: Downloaded images may be protected by copyright
+4. **Privacy concerns**: Consider the privacy implications of collecting face data
+5. **Data protection**: Ensure compliance with relevant data protection regulations
+
+Use this tool responsibly and ethically, and only for legitimate purposes.
+
+## Advanced Configuration
+
+For advanced users, the following settings can be modified in the `config.ini` file:
+
+```ini
+[Scraper]
+StartURL = https://example.com
+StateFile = data/crawler_state.json
+MaxPagesToVisit = 1000
+
+[Crawler]
+UserAgent = Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+RequestDelay = 0.5
+MaxRetries = 3
+Timeout = 30
+
+[Downloader]
+ConcurrentDownloads = 20
+RetryCount = 3
+Timeout = 30
+```
+
+## Integration with Face Matcher
+
+The web scraper is fully integrated with the main Face Matcher application:
+
+1. **Shared database**: Faces detected from scraped images are added to the same database used for face matching
+2. **Consistent processing**: The same face detection and encoding algorithms are used for uploaded and scraped images
+3. **Unified management**: Batch history provides a way to track and manage all your image sources
+
+After scraping and processing is complete, you can immediately use the Face Matcher to search for similar faces in your newly expanded database.
+
+## Conclusion
+
+The web scraper component is a powerful tool for building your face database efficiently. By following this guide and using the tool responsibly, you can create a comprehensive collection of faces for your matching needs.
+
+Remember to regularly back up your database and maintain organization of your image collections for optimal results.

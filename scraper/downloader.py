@@ -6,6 +6,7 @@ import json
 from .utils import sanitize_filename, ensure_directory
 from utils.logger import get_logger
 from utils.config import Config
+from datetime import datetime
 
 class ImageDownloader:
     """
@@ -175,25 +176,23 @@ class ImageDownloader:
     
     async def download_in_batches(self, image_urls, batch_size=1000, base_save_dir=None, batch_prefix="batch"):
         """
-        Download images in batches to avoid memory issues with large lists.
+        Download images in batches.
         
         Args:
-            image_urls (list): List of image URLs to download.
+            image_urls (list or set): List or set of image URLs to download.
             batch_size (int): Number of images per batch.
-            base_save_dir (str, optional): Base directory for all batches.
-            batch_prefix (str): Prefix for batch folder names.
+            base_save_dir (str, optional): Base directory for saving all batches.
+            batch_prefix (str): Prefix for batch directory names.
             
         Returns:
             dict: Statistics about the download process.
         """
-        if not image_urls:
-            self.logger.warning("No image URLs provided")
-            return {"total": 0, "successful": 0, "failed": 0}
-        
-        # Set up base directory
+        # Convert to list if it's a set
+        if isinstance(image_urls, set):
+            image_urls = list(image_urls)
+            
         if base_save_dir is None:
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
-            base_save_dir = os.path.join(self.base_download_dir, f"{batch_prefix}_{timestamp}")
+            base_save_dir = os.path.join(os.getcwd(), 'downloads', datetime.now().strftime("%Y%m%d_%H%M%S"))
         
         ensure_directory(base_save_dir)
         
