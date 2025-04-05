@@ -4,6 +4,8 @@ from PIL import Image, ImageTk
 import cv2
 import numpy as np
 import os
+from gui.scraper_dialog import ScraperDialog
+from scraper.main import scrape_and_download
 
 class FaceMatcherController:
     """
@@ -40,6 +42,7 @@ class FaceMatcherController:
         self.view.set_age_gender_overlay_callback(self.toggle_age_gender_overlay)
         self.view.set_back_callback(self.display_previous_image)
         self.view.set_forward_callback(self.display_next_image)
+        self.view.set_scraper_callback(self.show_scraper_dialog)
     
     def update_database_info(self):
         """Update the database size label in the view."""
@@ -235,6 +238,11 @@ class FaceMatcherController:
         # Redisplay the current images with updated overlay
         self.display_uploaded_image(self.model.current_image_path)
         self.display_match_results()
+        
+    def show_scraper_dialog(self):
+        """Show the web scraper dialog."""
+        self.logger.info("Opening web scraper dialog")
+        ScraperDialog(self.view.root, scrape_and_download)
     
     @staticmethod
     def overlay_landmarks(image, landmarks):

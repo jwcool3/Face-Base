@@ -40,12 +40,17 @@ class FaceMatcherView:
         self.age_gender_overlay_callback = None
         self.back_callback = None
         self.forward_callback = None
+        self.scraper_callback = None
         
     # Callback setters
     def set_upload_callback(self, callback):
         """Set the callback for the upload button."""
         self.upload_callback = callback
         self.upload_button.config(command=callback)
+        
+    def set_scraper_callback(self, callback):
+        """Set the callback for the scraper menu item."""
+        self.scraper_callback = callback
     
     def set_match_callback(self, callback):
         """Set the callback for the match button."""
@@ -212,6 +217,20 @@ class FaceMatcherView:
         # Resize the image
         return image.resize((new_width, new_height), Image.LANCZOS)
     
+    def _trigger_callback(self, callback_name):
+        """
+        Trigger a callback by name.
+        
+        Args:
+            callback_name (str): Name of the callback to trigger.
+        """
+        if callback_name == 'upload' and self.upload_callback:
+            self.upload_callback()
+        elif callback_name == 'match' and self.match_callback:
+            self.match_callback()
+        elif callback_name == 'scraper' and self.scraper_callback:
+            self.scraper_callback()
+    
     def run(self):
         """Start the main application loop."""
         self.root.mainloop()
@@ -224,6 +243,21 @@ class FaceMatcherView:
     
     def _create_frames(self):
         """Create the main frames for the application layout."""
+        # Menu bar
+        self.menu_bar = tk.Menu(self.root)
+        self.root.config(menu=self.menu_bar)
+        
+        # File menu
+        self.file_menu = tk.Menu(self.menu_bar, tearoff=0)
+        self.menu_bar.add_cascade(label="File", menu=self.file_menu)
+        self.file_menu.add_command(label="Upload Image", command=lambda: self._trigger_callback('upload'))
+        self.file_menu.add_command(label="Exit", command=self.root.quit)
+        
+        # Tools menu
+        self.tools_menu = tk.Menu(self.menu_bar, tearoff=0)
+        self.menu_bar.add_cascade(label="Tools", menu=self.tools_menu)
+        self.tools_menu.add_command(label="Web Scraper", command=lambda: self._trigger_callback('scraper'))
+        
         # Top frame for controls
         self.top_frame = ttk.Frame(self.root, padding=10)
         self.top_frame.pack(side='top', fill='x')
