@@ -34,22 +34,80 @@ class FaceEncoder:
         self.config = Config()
         
         # Use provided paths or get from config
-        self.img_folder = img_folder or self.config.get('Paths', 'ImageFolder')
-        self.db_path = db_path or self.config.get('Paths', 'DatabaseFolder')
-        self.cropped_face_folder = cropped_face_folder or self.config.get('Paths', 'CroppedFaceFolder')
+        self.img_folder = self._normalize_path(img_folder or self.config.get('Paths', 'ImageFolder'))
+        self.db_path = self._normalize_path(db_path or self.config.get('Paths', 'DatabaseFolder'))
+        self.cropped_face_folder = self._normalize_path(cropped_face_folder or self.config.get('Paths', 'CroppedFaceFolder'))
         
         # Initialize folders for organizing images
-        self.faces_folder = os.path.join(self.img_folder, "faces")
-        self.no_faces_folder = os.path.join(self.img_folder, "no_faces")
+        self.faces_folder = self._normalize_path(os.path.join(self.img_folder, "faces"))
+        self.no_faces_folder = self._normalize_path(os.path.join(self.img_folder, "no_faces"))
         
-        # Create necessary directories
-        os.makedirs(self.faces_folder, exist_ok=True)
-        os.makedirs(self.no_faces_folder, exist_ok=True)
-        os.makedirs(self.cropped_face_folder, exist_ok=True)
-        os.makedirs(self.db_path, exist_ok=True)
+        # Create necessary directories and check permissions
+        self._initialize_directories()
         
         # Initialize face detector
         self.face_detector = FaceDetector()
+    
+    def _normalize_path(self, path):
+        """
+        Normalize a path to use system-native separators and absolute paths.
+        
+        Args:
+            path (str): Path to normalize.
+            
+        Returns:
+            str: Normalized absolute path.
+        """
+        if path is None:
+            return None
+        # Convert separators to system native and normalize
+        path = os.path.normpath(path.replace('/', os.path.sep).replace('\\', os.path.sep))
+        # Convert to absolute path if not already
+        if not os.path.isabs(path):
+            path = os.path.abspath(path)
+        return path
+    
+    def _initialize_directories(self):
+        """Create necessary directories and verify they are writable."""
+        directories = [
+            self.faces_folder,
+            self.no_faces_folder,
+            self.cropped_face_folder,
+            self.db_path
+        ]
+        
+        for directory in directories:
+            try:
+                os.makedirs(directory, exist_ok=True)
+                if not self._is_directory_writable(directory):
+                    raise PermissionError(f"Directory is not writable: {directory}")
+                self.logger.debug(f"Initialized directory: {directory}")
+            except Exception as e:
+                self.logger.error(f"Error initializing directory {directory}: {e}")
+                raise
+    
+    def _is_directory_writable(self, directory):
+        """
+        Check if a directory is writable by attempting to create a temporary file.
+        
+        Args:
+            directory (str): Path to the directory to check.
+            
+        Returns:
+            bool: True if the directory is writable, False otherwise.
+        """
+        if not os.path.exists(directory):
+            return False
+            
+        try:
+            testfile = os.path.join(directory, "write_test_" + str(time.time()))
+            with open(testfile, 'w') as f:
+                f.write("test")
+            os.remove(testfile)
+            return True
+        except Exception as e:
+            self.logger.warning(f"Directory {directory} is not writable: {e}")
+            return False
     
     def get_image_files(self, folder):
         """
@@ -62,19 +120,21 @@ class FaceEncoder:
             list: List of paths to image files.
         """
         image_files = []
+        folder = self._normalize_path(folder)
+        
         excluded_dirs = {
-            os.path.abspath(self.cropped_face_folder),
-            os.path.abspath(self.faces_folder),
-            os.path.abspath(self.no_faces_folder)
+            self._normalize_path(self.cropped_face_folder),
+            self._normalize_path(self.faces_folder),
+            self._normalize_path(self.no_faces_folder)
         }
         
         for root, dirs, files in os.walk(folder):
             # Skip excluded folders
-            dirs[:] = [d for d in dirs if os.path.abspath(os.path.join(root, d)) not in excluded_dirs]
+            dirs[:] = [d for d in dirs if self._normalize_path(os.path.join(root, d)) not in excluded_dirs]
             
             for file in files:
                 if file.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp')):
-                    image_files.append(os.path.join(root, file))
+                    image_files.append(self._normalize_path(os.path.join(root, file)))
                     
         self.logger.info(f"Found {len(image_files)} image files in {folder}")
         return image_files
@@ -345,8 +405,8 @@ class FaceEncoder:
         
         for img_path in image_files:
             try:
-                # Normalize path
-                img_path = os.path.normpath(img_path)
+                # Normalize path for Windows - convert all separators to system native
+                img_path = os.path.normpath(os.path.abspath(img_path.replace('/', os.path.sep).replace('\\', os.path.sep)))
                 
                 # Check if file exists
                 if not os.path.isfile(img_path):
@@ -368,6 +428,13 @@ class FaceEncoder:
                     if min_face_size > 0:
                         face_data_list = [f for f in face_data_list if self._check_face_size(f, min_face_size)]
                     
+                    # Normalize paths in face data
+                    for face_data in face_data_list:
+                        if 'image_source' in face_data:
+                            face_data['image_source'] = os.path.normpath(face_data['image_source'].replace('/', os.path.sep).replace('\\', os.path.sep))
+                        if 'img_path' in face_data:
+                            face_data['img_path'] = os.path.normpath(face_data['img_path'].replace('/', os.path.sep).replace('\\', os.path.sep))
+                    
                     # Add faces to buffer
                     face_data_buffer.extend(face_data_list)
                     
@@ -380,22 +447,32 @@ class FaceEncoder:
                             # Create the no_faces directory in the same directory as the image
                             img_dir = os.path.dirname(img_path)
                             img_filename = os.path.basename(img_path)
-                            no_faces_dir = os.path.join(img_dir, "no_faces")
+                            no_faces_dir = os.path.normpath(os.path.join(img_dir, "no_faces"))
+                            
+                            # Create directory if it doesn't exist
                             os.makedirs(no_faces_dir, exist_ok=True)
                             
                             # Construct destination path
-                            dest_path = os.path.join(no_faces_dir, img_filename)
+                            dest_path = os.path.normpath(os.path.join(no_faces_dir, img_filename))
                             
-                            # Remove destination if it already exists
-                            if os.path.exists(dest_path):
-                                os.remove(dest_path)
-                                
-                            # Try copying instead of moving to avoid cross-device issues
-                            import shutil
-                            shutil.copy2(img_path, dest_path)
-                            # After successful copy, remove the original
-                            if os.path.exists(dest_path):
-                                os.remove(img_path)
+                            # If destination exists, add a suffix
+                            base, ext = os.path.splitext(dest_path)
+                            counter = 1
+                            while os.path.exists(dest_path):
+                                dest_path = os.path.normpath(f"{base}_{counter}{ext}")
+                                counter += 1
+                            
+                            # Copy first, then remove original
+                            try:
+                                import shutil
+                                shutil.copy2(img_path, dest_path)
+                                if os.path.exists(dest_path):  # Verify copy succeeded
+                                    try:
+                                        os.remove(img_path)
+                                    except Exception as e:
+                                        self.logger.warning(f"Could not remove original file {img_path}: {e}")
+                            except Exception as e:
+                                self.logger.error(f"Error copying file {img_path} to {dest_path}: {e}")
                         except Exception as e:
                             self.logger.error(f"Error handling file {img_path}: {e}")
             except Exception as e:
@@ -405,26 +482,37 @@ class FaceEncoder:
         # Save the collected face data to database
         if face_data_buffer:
             try:
+                # Ensure database directory exists
+                os.makedirs(self.db_path, exist_ok=True)
+                
                 # Generate a timestamp-based filename
                 import time
                 timestamp = int(time.time())
                 db_filename = f"face_data_batch_{timestamp}.json"
-                db_file_path = os.path.join(self.db_path, db_filename)
+                db_file_path = os.path.normpath(os.path.join(self.db_path, db_filename))
                 
                 # Save using atomic write pattern
-                with tempfile.NamedTemporaryFile('w', delete=False) as tmp_file:
+                import tempfile
+                temp_dir = os.path.dirname(db_file_path)  # Use same directory as target
+                
+                with tempfile.NamedTemporaryFile('w', delete=False, dir=temp_dir, suffix='.json') as tmp_file:
                     json.dump(face_data_buffer, tmp_file, indent=2)
                     tmp_file.flush()
                     os.fsync(tmp_file.fileno())
                     tmp_path = tmp_file.name
                 
                 # Rename temp file to final filename (atomic operation)
-                shutil.move(tmp_path, db_file_path)
+                # If target exists, remove it first (Windows requirement)
+                if os.path.exists(db_file_path):
+                    os.remove(db_file_path)
+                os.rename(tmp_path, db_file_path)
                 
                 self.logger.info(f"Saved {len(face_data_buffer)} faces to {db_file_path}")
                 
                 # Verify the saved file
-                self._verify_database_file(db_file_path, len(face_data_buffer))
+                if not self._verify_database_file(db_file_path, len(face_data_buffer)):
+                    self.logger.error(f"Database file verification failed: {db_file_path}")
+                    batch_stats['faces_added'] = 0
             except Exception as e:
                 self.logger.error(f"Error saving face data to database: {e}")
                 batch_stats['faces_added'] = 0
@@ -434,16 +522,17 @@ class FaceEncoder:
     def _is_face_in_database(self, img_path):
         """Check if an image has already been processed and exists in the database."""
         try:
+            img_path = self._normalize_path(img_path)
             # Look for any database file containing this image path
             for db_file in os.listdir(self.db_path):
                 if not db_file.endswith('.json'):
                     continue
                     
-                db_file_path = os.path.join(self.db_path, db_file)
+                db_file_path = self._normalize_path(os.path.join(self.db_path, db_file))
                 try:
                     with open(db_file_path, 'r') as f:
                         data = json.load(f)
-                        if any(face['image_source'] == img_path for face in data):
+                        if any(self._normalize_path(face['image_source']) == img_path for face in data):
                             return True
                 except Exception:
                     continue

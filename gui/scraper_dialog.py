@@ -7,6 +7,9 @@ import os
 from utils.logger import get_logger
 from processing.face_encoder import FaceEncoder
 from utils.config import Config
+import tempfile
+import json
+import time
 
 class ScraperDialog:
     """
@@ -812,13 +815,26 @@ class ScraperDialog:
                 'error_images': 0
             }
             
-            # Get database and cropped face folders
-            db_folder = self.config.get('Paths', 'DatabaseFolder', fallback="data/database")
-            cropped_face_folder = self.config.get('Paths', 'CroppedFaceFolder', fallback="data/cropped_faces")
+            # Get database and cropped face folders with absolute paths
+            db_folder = os.path.abspath(self.config.get('Paths', 'DatabaseFolder', fallback="data/database"))
+            cropped_face_folder = os.path.abspath(self.config.get('Paths', 'CroppedFaceFolder', fallback="data/cropped_faces"))
+            source_folder = os.path.abspath(source_folder)
+            
+            # Ensure directories exist
+            os.makedirs(db_folder, exist_ok=True)
+            os.makedirs(cropped_face_folder, exist_ok=True)
+            
+            self.logger.info(f"Processing images from: {source_folder}")
+            self.logger.info(f"Database folder: {db_folder}")
+            self.logger.info(f"Cropped faces folder: {cropped_face_folder}")
             
             # Initialize face encoder
             from processing.face_encoder import FaceEncoder
-            face_encoder = FaceEncoder(source_folder, db_folder, cropped_face_folder)
+            face_encoder = FaceEncoder(
+                img_folder=source_folder,
+                db_path=db_folder,
+                cropped_face_folder=cropped_face_folder
+            )
             
             # Get list of image files
             image_files = []
@@ -839,18 +855,100 @@ class ScraperDialog:
                     
                 # Get batch of files
                 batch_files = image_files[i:i+batch_size]
-                batch_stats = self._process_image_batch(face_encoder, batch_files, min_face_size, skip_existing, move_processed)
                 
-                # Update statistics
-                for key in batch_stats:
-                    if key in stats:
-                        stats[key] += batch_stats[key]
+                # Process the batch
+                face_buffer = []
+                for img_path in batch_files:
+                    try:
+                        # Normalize path for Windows
+                        img_path = os.path.normpath(os.path.abspath(img_path))
+                        
+                        # Skip if already processed and skip_existing is True
+                        if skip_existing and face_encoder._is_face_in_database(img_path):
+                            stats['skipped_images'] += 1
+                            continue
+                        
+                        # Process the image
+                        _, face_data_list = face_encoder.process_image(img_path)
+                        stats['processed_images'] += 1
+                        
+                        if face_data_list:
+                            # Filter faces by size if needed
+                            if min_face_size > 0:
+                                face_data_list = [f for f in face_data_list if self._check_face_size(f, min_face_size)]
+                            
+                            face_buffer.extend(face_data_list)
+                            stats['faces_found'] += len(face_data_list)
+                            stats['faces_added'] += len(face_data_list)
+                            
+                            # Move to faces folder if requested
+                            if move_processed:
+                                try:
+                                    faces_dir = os.path.join(os.path.dirname(img_path), "faces")
+                                    os.makedirs(faces_dir, exist_ok=True)
+                                    dest_path = os.path.join(faces_dir, os.path.basename(img_path))
+                                    if os.path.exists(dest_path):
+                                        os.remove(dest_path)
+                                    os.rename(img_path, dest_path)
+                                except Exception as e:
+                                    self.logger.error(f"Error moving file to faces folder: {e}")
+                        else:
+                            # No faces found
+                            if move_processed:
+                                try:
+                                    no_faces_dir = os.path.join(os.path.dirname(img_path), "no_faces")
+                                    os.makedirs(no_faces_dir, exist_ok=True)
+                                    dest_path = os.path.join(no_faces_dir, os.path.basename(img_path))
+                                    if os.path.exists(dest_path):
+                                        os.remove(dest_path)
+                                    os.rename(img_path, dest_path)
+                                except Exception as e:
+                                    self.logger.error(f"Error moving file to no_faces folder: {e}")
+                    except Exception as e:
+                        self.logger.error(f"Error processing image {img_path}: {e}")
+                        stats['error_images'] += 1
+                
+                # Save the batch to database if we have faces
+                if face_buffer:
+                    try:
+                        # Generate timestamp-based filename
+                        timestamp = int(time.time())
+                        db_filename = f"face_data_batch_{timestamp}.json"
+                        db_file_path = os.path.join(db_folder, db_filename)
+                        
+                        # Save using atomic write pattern
+                        with tempfile.NamedTemporaryFile('w', delete=False, dir=db_folder, suffix='.json') as tmp_file:
+                            json.dump(face_buffer, tmp_file, indent=2)
+                            tmp_file.flush()
+                            os.fsync(tmp_file.fileno())
+                            tmp_path = tmp_file.name
+                        
+                        # Rename temp file to final filename
+                        if os.path.exists(db_file_path):
+                            os.remove(db_file_path)
+                        os.rename(tmp_path, db_file_path)
+                        
+                        self.logger.info(f"Saved {len(face_buffer)} faces to {db_file_path}")
+                    except Exception as e:
+                        self.logger.error(f"Error saving face data to database: {e}")
+                        stats['faces_added'] -= len(face_buffer)
                 
                 # Update UI
                 progress = (i + len(batch_files)) / len(image_files) * 100
                 self._update_progress(progress)
                 self._update_stats(stats)
-                self._update_ui(f"Processed batch {i//batch_size + 1}/{(len(image_files) + batch_size - 1)//batch_size}. Found {batch_stats['faces_found']} faces.")
+                self._update_ui(f"Processed batch {i//batch_size + 1}/{(len(image_files) + batch_size - 1)//batch_size}. Found {stats['faces_found']} faces.")
+            
+            # Verify database after processing
+            self.logger.info("Verifying database...")
+            db_stats = face_encoder.verify_database()
+            self._update_ui(
+                f"Database verification:\n"
+                f"- Total files: {db_stats['total_files']}\n"
+                f"- Valid files: {db_stats['valid_files']}\n"
+                f"- Total faces: {db_stats['total_faces']}\n"
+                f"- Corrupted files: {db_stats['corrupted_files']}"
+            )
             
             # Final report
             self._update_ui(
@@ -874,51 +972,6 @@ class ScraperDialog:
                 if filename.lower().endswith(extension.lower()):
                     files.append(os.path.join(root, filename))
         return files
-    
-    def _process_image_batch(self, face_encoder, image_files, min_face_size, skip_existing, move_processed):
-        """Process a batch of images and return statistics."""
-        batch_stats = {
-            'processed_images': 0,
-            'faces_found': 0,
-            'faces_added': 0,
-            'skipped_images': 0,
-            'error_images': 0
-        }
-        
-        for img_path in image_files:
-            try:
-                # Process the image
-                _, face_data_list = face_encoder.process_image(img_path)
-                batch_stats['processed_images'] += 1
-                
-                if face_data_list:
-                    # Filter faces by size if needed
-                    if min_face_size > 0:
-                        face_data_list = [f for f in face_data_list if self._check_face_size(f, min_face_size)]
-                    
-                    batch_stats['faces_found'] += len(face_data_list)
-                    batch_stats['faces_added'] += len(face_data_list)  # Assuming all found faces are added
-                else:
-                    # No faces found
-                    if move_processed:
-                        # Create path using os.path functions consistently
-                        img_dir = os.path.dirname(img_path)
-                        img_filename = os.path.basename(img_path)
-                        no_faces_dir = os.path.join(img_dir, "no_faces")
-                        os.makedirs(no_faces_dir, exist_ok=True)
-                        
-                        try:
-                            dest_path = os.path.join(no_faces_dir, img_filename)
-                            if os.path.exists(dest_path):
-                                os.remove(dest_path)
-                            os.rename(img_path, dest_path)
-                        except Exception as e:
-                            self.logger.error(f"Error moving file {img_path}: {e}")
-            except Exception as e:
-                self.logger.error(f"Error processing image {img_path}: {e}")
-                batch_stats['error_images'] += 1
-        
-        return batch_stats
     
     def _check_face_size(self, face_data, min_size):
         """Check if a face meets the minimum size requirement."""
