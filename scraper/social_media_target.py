@@ -10,14 +10,26 @@ class SocialMediaTargetSelector:
         
         # Public social media platforms and hashtag pages
         self.social_platforms = [
+            # Instagram Explore Tags
             "https://www.instagram.com/explore/tags/portrait/",
             "https://www.instagram.com/explore/tags/selfie/",
             "https://www.instagram.com/explore/tags/people/",
+            
+            # Twitter Search URLs
             "https://twitter.com/search?q=selfie&src=typed_query&f=image",
+            "https://twitter.com/search?q=portrait&src=typed_query&f=image",
+            "https://twitter.com/search?q=headshot&src=typed_query&f=image",
+            "https://twitter.com/search?q=people&src=typed_query&f=image",
+            
+            # Pinterest
             "https://www.pinterest.com/search/pins/?q=people%20portrait",
+            
+            # Reddit
             "https://www.reddit.com/r/portraits/",
             "https://www.reddit.com/r/selfies/",
             "https://www.reddit.com/r/humanporn/",  # SFW photography of people
+            
+            # Flickr
             "https://www.flickr.com/groups/portraits/pool/"
         ]
         

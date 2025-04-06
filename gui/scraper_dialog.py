@@ -1298,6 +1298,14 @@ class ScraperDialog:
         )
         self.instagram_button.pack(side=tk.RIGHT, padx=5)
         
+        # Add Twitter button
+        self.twitter_button = ttk.Button(
+            instagram_button_frame,
+            text="Run Twitter Scraper",
+            command=self.start_twitter_scraper
+        )
+        self.twitter_button.pack(side=tk.RIGHT, padx=5)
+        
         # Show profiles button
         self.show_profiles_button = ttk.Button(
             instagram_button_frame,
@@ -1594,22 +1602,11 @@ class ScraperDialog:
     def _run_instagram_scraper(self, profile_count, scrape_count, images_per_profile):
         """Run the Instagram scraper in a separate thread."""
         try:
-            # Import the controller
-            from scraper.instagram_controller import InstagramController
+            # Import the new Instagram controller
+            from scraper.instagram_controller import scrape_instagram_profiles
             
-            # Default paths
-            profiles_file = "data/instagram_profiles.json"
-            output_dir = os.path.join(self.config.get('Paths', 'DownloadFolder', fallback="data/downloaded_images"), "instagram")
-            
-            # Initialize the controller
-            controller = InstagramController(profiles_file=profiles_file, output_dir=output_dir)
-            
-            # Set up asyncio loop for this thread
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
-            
-            # Run the pipeline
-            results = loop.run_until_complete(controller.run_full_pipeline(
+            # Run the scraper using asyncio
+            results = asyncio.run(scrape_instagram_profiles(
                 profile_count=profile_count,
                 max_profiles_to_scrape=scrape_count,
                 max_images_per_profile=images_per_profile
@@ -1748,3 +1745,123 @@ class ScraperDialog:
                 "Error",
                 f"Failed to load Instagram profiles: {e}"
             )
+
+    def start_twitter_scraper(self):
+        """Start the Twitter profile discovery and scraping process."""
+        if self.auto_mode_running:
+            messagebox.showwarning(
+                "Process Running",
+                "Another automatic scraping process is already running. Please wait for it to complete."
+            )
+            return
+        
+        # Get input values
+        try:
+            profile_count = int(self.profile_count_var.get())
+            scrape_count = int(self.scrape_count_var.get())
+            images_per_profile = int(self.images_per_profile_var.get())
+            
+            if profile_count <= 0 or scrape_count <= 0 or images_per_profile <= 0:
+                raise ValueError("Values must be positive numbers")
+                
+            if scrape_count > profile_count:
+                scrape_count = profile_count
+                self.scrape_count_var.set(str(scrape_count))
+        except ValueError as e:
+            messagebox.showerror(
+                "Invalid Input",
+                f"Please enter valid settings: {str(e)}"
+            )
+            return
+        
+        # Prepare UI for scraping
+        self.auto_mode_running = True
+        self.twitter_button.config(state="disabled")
+        self.auto_progress_bar.config(mode="indeterminate")
+        self.auto_progress_bar.start(10)
+        self.status_label.config(text="Twitter scraping in progress...")
+        self.log("Starting Twitter profile discovery and scraping...")
+        
+        # Reset statistics
+        self.faces_collected_label.config(text="0")
+        self.images_processed_label.config(text="0")
+        self.sites_visited_label.config(text="0")
+        self.current_source_label.config(text="Twitter")
+        
+        # Initialize progress updater
+        self.start_time = time.time()
+        self.update_id = self.dialog.after(1000, self._update_elapsed_time)
+        
+        # Create and start the thread
+        twitter_thread = threading.Thread(
+            target=self._run_twitter_scraper,
+            args=(
+                profile_count,
+                scrape_count,
+                images_per_profile
+            )
+        )
+        twitter_thread.daemon = True
+        twitter_thread.start()
+
+    def _run_twitter_scraper(self, profile_count, scrape_count, images_per_profile):
+        """Run the Twitter scraper in a separate thread."""
+        try:
+            # Import the new Twitter controller
+            from scraper.twitter_controller import scrape_twitter_profiles
+            
+            # Run the scraper using asyncio
+            results = asyncio.run(scrape_twitter_profiles(
+                profile_count=profile_count,
+                max_profiles_to_scrape=scrape_count,
+                max_images_per_profile=images_per_profile
+            ))
+            
+            # Update UI with results
+            self.dialog.after(0, self._update_twitter_status, 
+                             results.get('faces_detected', 0),
+                             results.get('images_downloaded', 0),
+                             results.get('profiles_found', 0))
+            
+            # Report success
+            self._update_ui(
+                f"Twitter scraping completed.\n"
+                f"Found {results.get('profiles_found', 0)} profiles.\n"
+                f"Downloaded {results.get('images_downloaded', 0)} images.\n"
+                f"Detected {results.get('faces_detected', 0)} faces.\n"
+                f"Total runtime: {results.get('runtime_seconds', 0)/60:.1f} minutes"
+            )
+            
+        except Exception as e:
+            # Report error
+            self._update_ui(f"Error in Twitter scraping: {str(e)}")
+            self.logger.error(f"Twitter scraper error: {e}", exc_info=True)
+        finally:
+            # Clean up
+            if hasattr(self, 'update_id'):
+                self.dialog.after_cancel(self.update_id)
+            self._update_ui("Twitter scraping complete.")
+            self.dialog.after(0, self._twitter_scraping_complete)
+
+    def _update_twitter_status(self, faces_count, images_count, profiles_count):
+        """Update the Twitter scraper status UI."""
+        self.faces_collected_label.config(text=str(faces_count))
+        self.images_processed_label.config(text=str(images_count))
+        self.sites_visited_label.config(text=str(profiles_count))
+        
+        # Update progress based on target
+        progress = min(100, (faces_count / int(self.target_count_var.get())) * 100)
+        self.auto_progress_bar.stop()
+        self.auto_progress_bar.config(mode="determinate")
+        self.auto_progress_var.set(progress)
+
+    def _twitter_scraping_complete(self):
+        """Update the UI when Twitter scraping is complete."""
+        self.auto_mode_running = False
+        self.twitter_button.config(state="normal")
+        self.auto_progress_bar.stop()
+        self.auto_progress_bar.config(value=100)
+        self.status_label.config(text="Twitter scraping complete")
+        
+        # Refresh history
+        self._load_history()

@@ -1,9 +1,13 @@
-# Scraper package for Face Matcher application
-
+from .social_media_crawler import SocialMediaCrawler
+from .person_detector import RealPersonDetector
+from .automatic_scraper import AutomaticPersonScraper
+from .social_media_target import SocialMediaTargetSelector
+from .selenium_twitter_scraper import scrape_twitter_profiles
+from .selenium_twitter_scraper import SeleniumTwitterScraper
+from .twitter_controller import TwitterScrapeController
 
 from .social_media_crawler import SocialMediaCrawler
 from .person_detector import RealPersonDetector
 from .automatic_scraper import AutomaticPersonScraper
 from .social_media_target import SocialMediaTargetSelector
-
-
+from .selenium_twitter_scraper import scrape_twitter_profiles
