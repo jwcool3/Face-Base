@@ -1,15 +1,15 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 import threading
 import asyncio
 import sys
 import os
+import time
+import json
+import tempfile
 from utils.logger import get_logger
 from processing.face_encoder import FaceEncoder
 from utils.config import Config
-import tempfile
-import json
-import time
 
 class ScraperDialog:
     """
@@ -30,6 +30,9 @@ class ScraperDialog:
         self.scraper_callback = scraper_callback
         self.processor_callback = processor_callback
         self.config = Config()
+        self.auto_mode_running = False
+        self.target_selector = None
+        self.person_scraper = None
         
         # Create a new top-level window
         self.dialog = tk.Toplevel(parent)
@@ -76,6 +79,11 @@ class ScraperDialog:
         self._create_crawl_tab()
         self._create_process_tab()
         self._create_history_tab()
+        
+        # Add automatic mode tab
+        self.auto_tab = ttk.Frame(self.notebook)
+        self.notebook.add(self.auto_tab, text="  Automatic Mode  ")
+        self._create_auto_tab()
         
         # Log frame (below tabs)
         log_frame = ttk.LabelFrame(main_frame, text="Log", padding=10)
@@ -1099,3 +1107,644 @@ class ScraperDialog:
                 self.dialog.destroy()
         else:
             self.dialog.destroy()
+
+    def _create_auto_tab(self):
+        """Create the automatic mode tab content for social media focus."""
+        # Main frame
+        auto_frame = ttk.Frame(self.auto_tab, padding=5)
+        auto_frame.pack(fill=tk.X, pady=5)
+        
+        # Title
+        title_label = ttk.Label(
+            auto_frame, 
+            text="Automatic Social Media Photo Collector",
+            font=("Helvetica", 12, "bold")
+        )
+        title_label.pack(pady=10)
+        
+        description_label = ttk.Label(
+            auto_frame,
+            text="This tool automatically collects public photos of people from social media and photo sharing sites.",
+            wraplength=500
+        )
+        description_label.pack(pady=5)
+        
+        # Settings frame
+        settings_frame = ttk.LabelFrame(auto_frame, text="Collection Settings", padding=10)
+        settings_frame.pack(fill=tk.X, pady=10)
+        
+        # Target count
+        target_frame = ttk.Frame(settings_frame)
+        target_frame.pack(fill=tk.X, pady=5)
+        
+        target_label = ttk.Label(target_frame, text="Target Face Count:")
+        target_label.pack(side=tk.LEFT, padx=5)
+        
+        self.target_count_var = tk.StringVar(value="500")
+        target_entry = ttk.Entry(target_frame, textvariable=self.target_count_var, width=10)
+        target_entry.pack(side=tk.LEFT, padx=5)
+        
+        # Maximum runtime
+        runtime_frame = ttk.Frame(settings_frame)
+        runtime_frame.pack(fill=tk.X, pady=5)
+        
+        runtime_label = ttk.Label(runtime_frame, text="Maximum Runtime (minutes):")
+        runtime_label.pack(side=tk.LEFT, padx=5)
+        
+        self.max_runtime_var = tk.StringVar(value="60")
+        runtime_entry = ttk.Entry(runtime_frame, textvariable=self.max_runtime_var, width=10)
+        runtime_entry.pack(side=tk.LEFT, padx=5)
+        
+        # Source selection frame
+        source_frame = ttk.LabelFrame(auto_frame, text="Source Selection", padding=10)
+        source_frame.pack(fill=tk.X, pady=10)
+        
+        # Source options
+        sources = [
+            ("Instagram Public Tags", "instagram"),
+            ("Twitter Public Photos", "twitter"),
+            ("Pinterest Boards", "pinterest"),
+            ("Flickr Public", "flickr"),
+            ("Reddit Public", "reddit"),
+            ("Public Photo Communities", "community"),
+            ("Photo Sharing Sites", "photo")
+        ]
+        
+        self.source_vars = {}
+        for text, value in sources:
+            var = tk.BooleanVar(value=True)
+            self.source_vars[value] = var
+            ttk.Checkbutton(
+                source_frame,
+                text=text,
+                variable=var
+            ).pack(anchor=tk.W, padx=5, pady=2)
+        
+        # Custom URL
+        custom_frame = ttk.Frame(source_frame)
+        custom_frame.pack(fill=tk.X, pady=10)
+        
+        custom_label = ttk.Label(custom_frame, text="Add Custom URL:")
+        custom_label.pack(side=tk.LEFT, padx=5)
+        
+        self.custom_url_var = tk.StringVar()
+        custom_entry = ttk.Entry(custom_frame, textvariable=self.custom_url_var, width=40)
+        custom_entry.pack(side=tk.LEFT, padx=5)
+        
+        add_button = ttk.Button(
+            custom_frame,
+            text="Add",
+            command=self._add_custom_url
+        )
+        add_button.pack(side=tk.LEFT, padx=5)
+        
+        # Progress and status
+        progress_frame = ttk.Frame(auto_frame)
+        progress_frame.pack(fill=tk.X, pady=10)
+        
+        self.auto_progress_var = tk.DoubleVar(value=0)
+        self.auto_progress_bar = ttk.Progressbar(
+            progress_frame,
+            variable=self.auto_progress_var,
+            mode='determinate',
+            length=400
+        )
+        self.auto_progress_bar.pack(side=tk.LEFT, padx=5, fill=tk.X, expand=True)
+        
+        # Start button
+        self.auto_start_button = ttk.Button(
+            progress_frame,
+            text="Start Social Media Collector",
+            command=self.start_automatic_mode
+        )
+        self.auto_start_button.pack(side=tk.LEFT, padx=5)
+        
+        # Status Frame
+        status_frame = ttk.LabelFrame(auto_frame, text="Collection Status", padding=10)
+        status_frame.pack(fill=tk.X, pady=10)
+        
+        # Status grid
+        status_grid = ttk.Frame(status_frame)
+        status_grid.pack(fill=tk.X, pady=5)
+        
+        # Row 1
+        ttk.Label(status_grid, text="Faces Collected:").grid(row=0, column=0, padx=5, pady=2, sticky="w")
+        self.faces_collected_label = ttk.Label(status_grid, text="0")
+        self.faces_collected_label.grid(row=0, column=1, padx=5, pady=2, sticky="w")
+        
+        ttk.Label(status_grid, text="Images Processed:").grid(row=0, column=2, padx=5, pady=2, sticky="w")
+        self.images_processed_label = ttk.Label(status_grid, text="0")
+        self.images_processed_label.grid(row=0, column=3, padx=5, pady=2, sticky="w")
+        
+        # Row 2
+        ttk.Label(status_grid, text="Sites Visited:").grid(row=1, column=0, padx=5, pady=2, sticky="w")
+        self.sites_visited_label = ttk.Label(status_grid, text="0")
+        self.sites_visited_label.grid(row=1, column=1, padx=5, pady=2, sticky="w")
+        
+        ttk.Label(status_grid, text="Elapsed Time:").grid(row=1, column=2, padx=5, pady=2, sticky="w")
+        self.elapsed_time_label = ttk.Label(status_grid, text="00:00:00")
+        self.elapsed_time_label.grid(row=1, column=3, padx=5, pady=2, sticky="w")
+        
+        # Row 3
+        ttk.Label(status_grid, text="Current Source:").grid(row=2, column=0, padx=5, pady=2, sticky="w")
+        self.current_source_label = ttk.Label(status_grid, text="None")
+        self.current_source_label.grid(row=2, column=1, columnspan=3, padx=5, pady=2, sticky="w")
+        
+        # Add Instagram specific section
+        instagram_frame = ttk.LabelFrame(auto_frame, text="Instagram Profile Scraping", padding=10)
+        instagram_frame.pack(fill=tk.X, pady=10)
+        
+        # Profile count
+        profile_frame = ttk.Frame(instagram_frame)
+        profile_frame.pack(fill=tk.X, pady=5)
+        
+        profile_label = ttk.Label(profile_frame, text="Profiles to Find:")
+        profile_label.pack(side=tk.LEFT, padx=5)
+        
+        self.profile_count_var = tk.StringVar(value="200")
+        profile_entry = ttk.Entry(profile_frame, textvariable=self.profile_count_var, width=10)
+        profile_entry.pack(side=tk.LEFT, padx=5)
+        
+        # Profiles to scrape
+        scrape_frame = ttk.Frame(instagram_frame)
+        scrape_frame.pack(fill=tk.X, pady=5)
+        
+        scrape_label = ttk.Label(scrape_frame, text="Profiles to Scrape:")
+        scrape_label.pack(side=tk.LEFT, padx=5)
+        
+        self.scrape_count_var = tk.StringVar(value="50")
+        scrape_entry = ttk.Entry(scrape_frame, textvariable=self.scrape_count_var, width=10)
+        scrape_entry.pack(side=tk.LEFT, padx=5)
+        
+        # Images per profile
+        images_frame = ttk.Frame(instagram_frame)
+        images_frame.pack(fill=tk.X, pady=5)
+        
+        images_label = ttk.Label(images_frame, text="Images per Profile:")
+        images_label.pack(side=tk.LEFT, padx=5)
+        
+        self.images_per_profile_var = tk.StringVar(value="10")
+        images_entry = ttk.Entry(images_frame, textvariable=self.images_per_profile_var, width=10)
+        images_entry.pack(side=tk.LEFT, padx=5)
+        
+        # Instagram button
+        instagram_button_frame = ttk.Frame(instagram_frame)
+        instagram_button_frame.pack(fill=tk.X, pady=10)
+        
+        self.instagram_button = ttk.Button(
+            instagram_button_frame,
+            text="Run Instagram Scraper",
+            command=self.start_instagram_scraper
+        )
+        self.instagram_button.pack(side=tk.RIGHT, padx=5)
+        
+        # Show profiles button
+        self.show_profiles_button = ttk.Button(
+            instagram_button_frame,
+            text="Show Discovered Profiles",
+            command=self._show_instagram_profiles
+        )
+        self.show_profiles_button.pack(side=tk.LEFT, padx=5)
+
+    def _add_custom_url(self):
+        """Add a custom URL to the target list."""
+        url = self.custom_url_var.get().strip()
+        if not url:
+            return
+            
+        if not url.startswith(('http://', 'https://')):
+            url = 'https://' + url
+            
+        # Check if target selector initialized
+        if not hasattr(self, 'target_selector') or self.target_selector is None:
+            from scraper.social_media_target import SocialMediaTargetSelector
+            self.target_selector = SocialMediaTargetSelector()
+        
+        # Add to the appropriate category
+        self.target_selector.add_custom_target(url, "social")
+        
+        # Confirm to user
+        self.custom_url_var.set("")
+        self.log(f"Added custom URL: {url}")
+
+    def start_automatic_mode(self):
+        """Start the automatic social media scraping mode."""
+        if self.auto_mode_running:
+            messagebox.showwarning(
+                "Automatic Mode Running",
+                "Automatic mode is already running. Please wait for it to complete."
+            )
+            return
+        
+        # Get input values
+        try:
+            target_face_count = int(self.target_count_var.get())
+            max_runtime = int(self.max_runtime_var.get())
+            
+            if target_face_count <= 0 or max_runtime <= 0:
+                raise ValueError("Values must be positive numbers")
+        except ValueError as e:
+            messagebox.showerror(
+                "Invalid Input",
+                f"Please enter valid settings: {str(e)}"
+            )
+            return
+        
+        # Get selected sources
+        selected_sources = [source for source, var in self.source_vars.items() if var.get()]
+        if not selected_sources:
+            messagebox.showerror(
+                "No Sources Selected",
+                "Please select at least one source category."
+            )
+            return
+        
+        # Prepare UI for scraping
+        self.auto_mode_running = True
+        self.auto_start_button.config(state="disabled")
+        self.auto_progress_bar.config(mode="indeterminate")
+        self.auto_progress_bar.start(10)
+        self.status_label.config(text="Social media scraping in progress...")
+        self.log("Starting automatic social media photo collection...")
+        
+        # Reset statistics
+        self.faces_collected_label.config(text="0")
+        self.images_processed_label.config(text="0")
+        self.sites_visited_label.config(text="0")
+        self.elapsed_time_label.config(text="00:00:00")
+        self.current_source_label.config(text="Initializing...")
+        
+        # Initialize progress updater
+        self.start_time = time.time()
+        self.update_id = self.dialog.after(1000, self._update_elapsed_time)
+        
+        # Create and start the thread
+        auto_thread = threading.Thread(
+            target=self._run_social_scraper,
+            args=(
+                target_face_count,
+                max_runtime,
+                selected_sources
+            )
+        )
+        auto_thread.daemon = True
+        auto_thread.start()
+
+    def _update_elapsed_time(self):
+        """Update the elapsed time display."""
+        if not hasattr(self, 'start_time') or not self.auto_mode_running:
+            return
+        
+        elapsed = time.time() - self.start_time
+        hours = int(elapsed // 3600)
+        minutes = int((elapsed % 3600) // 60)
+        seconds = int(elapsed % 60)
+        
+        time_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+        self.elapsed_time_label.config(text=time_str)
+        
+        # Continue updating if still running
+        if self.auto_mode_running:
+            self.update_id = self.dialog.after(1000, self._update_elapsed_time)
+
+    def _run_social_scraper(self, target_face_count, max_runtime, selected_sources):
+        """Run the social media scraper in a separate thread."""
+        try:
+            # Import modules here to avoid circular imports
+            from scraper.social_media_target import SocialMediaTargetSelector
+            from scraper.automatic_scraper import AutomaticPersonScraper
+            
+            # Get database and download paths
+            db_path = self.config.get('Paths', 'DatabaseFolder', fallback="data/database")
+            download_dir = self.config.get('Paths', 'DownloadFolder', fallback="data/downloaded_images")
+            social_download_dir = os.path.join(download_dir, f"social_media_{int(time.time())}")
+            
+            # Initialize the target selector and configure sources
+            self.target_selector = SocialMediaTargetSelector()
+            self.target_selector.configure_sources(selected_sources)
+            
+            # Log detailed information about configured sources
+            self._log_configured_sources(self.target_selector)
+            
+            # Initialize the scraper with the configured target selector
+            self.person_scraper = AutomaticPersonScraper(
+                db_path=db_path, 
+                download_dir=social_download_dir,
+                target_selector=self.target_selector
+            )
+            
+            # Set up asyncio loop for this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            # Variables for status updates
+            face_count = 0
+            images_processed = 0
+            sites_visited = 0
+            current_source = "Starting..."
+            
+            # Define the update function
+            def update_status(stats):
+                nonlocal face_count, images_processed, sites_visited, current_source
+                face_count = stats.get('face_count', 0)
+                images_processed = stats.get('images_processed', 0)
+                sites_visited = stats.get('sites_visited', 0)
+                current_source = stats.get('current_source', current_source)
+                
+                self.dialog.after(0, self._update_social_status, 
+                                face_count, images_processed, 
+                                sites_visited, current_source)
+            
+            # Run the scraper
+            results = loop.run_until_complete(self.person_scraper.run_automatic_mode(
+                target_face_count=target_face_count,
+                max_runtime_minutes=max_runtime
+            ))
+            
+            # Final update
+            update_status(results)
+            
+            # Report success
+            self._update_ui(
+                f"Social media collection completed.\n"
+                f"Collected {results.get('face_count', 0)} of {target_face_count} target faces.\n"
+                f"Processed {results.get('images_processed', 0)} images from {results.get('sites_visited', 0)} sites.\n"
+                f"Total runtime: {results.get('runtime_seconds', 0)/60:.1f} minutes"
+            )
+            
+        except Exception as e:
+            # Report error
+            self._update_ui(f"Error in social media collection: {str(e)}")
+            self.logger.error(f"Social scraper error: {e}", exc_info=True)
+        finally:
+            # Clean up
+            if hasattr(self, 'update_id'):
+                self.dialog.after_cancel(self.update_id)
+            self._update_ui("Social media collection complete.")
+            self.dialog.after(0, self._auto_mode_complete)
+
+    def _update_social_status(self, face_count, images_processed, sites_visited, current_source):
+        """Update the social scraper status UI."""
+        self.faces_collected_label.config(text=str(face_count))
+        self.images_processed_label.config(text=str(images_processed))
+        self.sites_visited_label.config(text=str(sites_visited))
+        self.current_source_label.config(text=current_source)
+        
+        # Update progress based on target
+        progress = min(100, (face_count / int(self.target_count_var.get())) * 100)
+        self.auto_progress_bar.stop()
+        self.auto_progress_bar.config(mode="determinate")
+        self.auto_progress_var.set(progress)
+
+    def _auto_mode_complete(self):
+        """Update the UI when automatic mode is complete."""
+        self.auto_mode_running = False
+        self.auto_start_button.config(state="normal")
+        self.auto_progress_bar.stop()
+        self.auto_progress_bar.config(value=100)
+        self.status_label.config(text="Automatic mode complete")
+        
+        # Refresh history
+        self._load_history()
+
+    def _log_configured_sources(self, target_selector):
+        """Log detailed information about configured sources."""
+        # Get the first few URLs from each source to log (for debugging)
+        social_urls = target_selector.social_platforms[:2] if target_selector.social_platforms else []
+        photo_urls = target_selector.photo_sharing_sites[:2] if target_selector.photo_sharing_sites else []
+        community_urls = target_selector.community_sites[:2] if target_selector.community_sites else []
+        
+        # Add ellipsis if there are more URLs
+        if len(target_selector.social_platforms) > 2:
+            social_urls.append("...")
+        if len(target_selector.photo_sharing_sites) > 2:
+            photo_urls.append("...")
+        if len(target_selector.community_sites) > 2:
+            community_urls.append("...")
+            
+        # Log source counts and examples
+        self.logger.info(f"Configured social platforms ({len(target_selector.social_platforms)}): {social_urls}")
+        self.logger.info(f"Configured photo sites ({len(target_selector.photo_sharing_sites)}): {photo_urls}")
+        self.logger.info(f"Configured community sites ({len(target_selector.community_sites)}): {community_urls}")
+        
+        # Also update the status message in the UI
+        platforms_text = f"Social: {len(target_selector.social_platforms)}, "
+        platforms_text += f"Photo: {len(target_selector.photo_sharing_sites)}, "
+        platforms_text += f"Community: {len(target_selector.community_sites)}"
+        self._update_ui(f"Configured source counts: {platforms_text}")
+
+    def start_instagram_scraper(self):
+        """Start the Instagram profile discovery and scraping process."""
+        if self.auto_mode_running:
+            messagebox.showwarning(
+                "Process Running",
+                "Another automatic scraping process is already running. Please wait for it to complete."
+            )
+            return
+        
+        # Get input values
+        try:
+            profile_count = int(self.profile_count_var.get())
+            scrape_count = int(self.scrape_count_var.get())
+            images_per_profile = int(self.images_per_profile_var.get())
+            
+            if profile_count <= 0 or scrape_count <= 0 or images_per_profile <= 0:
+                raise ValueError("Values must be positive numbers")
+                
+            if scrape_count > profile_count:
+                scrape_count = profile_count
+                self.scrape_count_var.set(str(scrape_count))
+        except ValueError as e:
+            messagebox.showerror(
+                "Invalid Input",
+                f"Please enter valid settings: {str(e)}"
+            )
+            return
+        
+        # Prepare UI for scraping
+        self.auto_mode_running = True
+        self.instagram_button.config(state="disabled")
+        self.auto_progress_bar.config(mode="indeterminate")
+        self.auto_progress_bar.start(10)
+        self.status_label.config(text="Instagram scraping in progress...")
+        self.log("Starting Instagram profile discovery and scraping...")
+        
+        # Reset statistics
+        self.faces_collected_label.config(text="0")
+        self.images_processed_label.config(text="0")
+        self.sites_visited_label.config(text="0")
+        self.current_source_label.config(text="Instagram")
+        
+        # Initialize progress updater
+        self.start_time = time.time()
+        self.update_id = self.dialog.after(1000, self._update_elapsed_time)
+        
+        # Create and start the thread
+        instagram_thread = threading.Thread(
+            target=self._run_instagram_scraper,
+            args=(
+                profile_count,
+                scrape_count,
+                images_per_profile
+            )
+        )
+        instagram_thread.daemon = True
+        instagram_thread.start()
+
+    def _run_instagram_scraper(self, profile_count, scrape_count, images_per_profile):
+        """Run the Instagram scraper in a separate thread."""
+        try:
+            # Import the controller
+            from scraper.instagram_controller import InstagramController
+            
+            # Default paths
+            profiles_file = "data/instagram_profiles.json"
+            output_dir = os.path.join(self.config.get('Paths', 'DownloadFolder', fallback="data/downloaded_images"), "instagram")
+            
+            # Initialize the controller
+            controller = InstagramController(profiles_file=profiles_file, output_dir=output_dir)
+            
+            # Set up asyncio loop for this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            
+            # Run the pipeline
+            results = loop.run_until_complete(controller.run_full_pipeline(
+                profile_count=profile_count,
+                max_profiles_to_scrape=scrape_count,
+                max_images_per_profile=images_per_profile
+            ))
+            
+            # Update UI with results
+            self.dialog.after(0, self._update_instagram_status, 
+                             results.get('faces_detected', 0),
+                             results.get('images_downloaded', 0),
+                             results.get('profiles_found', 0))
+            
+            # Report success
+            self._update_ui(
+                f"Instagram scraping completed.\n"
+                f"Found {results.get('profiles_found', 0)} profiles.\n"
+                f"Downloaded {results.get('images_downloaded', 0)} images.\n"
+                f"Detected {results.get('faces_detected', 0)} faces.\n"
+                f"Total runtime: {results.get('runtime_seconds', 0)/60:.1f} minutes"
+            )
+            
+        except Exception as e:
+            # Report error
+            self._update_ui(f"Error in Instagram scraping: {str(e)}")
+            self.logger.error(f"Instagram scraper error: {e}", exc_info=True)
+        finally:
+            # Clean up
+            if hasattr(self, 'update_id'):
+                self.dialog.after_cancel(self.update_id)
+            self._update_ui("Instagram scraping complete.")
+            self.dialog.after(0, self._instagram_scraping_complete)
+
+    def _update_instagram_status(self, faces_count, images_count, profiles_count):
+        """Update the Instagram scraper status UI."""
+        self.faces_collected_label.config(text=str(faces_count))
+        self.images_processed_label.config(text=str(images_count))
+        self.sites_visited_label.config(text=str(profiles_count))
+        
+        # Update progress based on target
+        progress = min(100, (faces_count / int(self.target_count_var.get())) * 100)
+        self.auto_progress_bar.stop()
+        self.auto_progress_bar.config(mode="determinate")
+        self.auto_progress_var.set(progress)
+
+    def _instagram_scraping_complete(self):
+        """Update the UI when Instagram scraping is complete."""
+        self.auto_mode_running = False
+        self.instagram_button.config(state="normal")
+        self.auto_progress_bar.stop()
+        self.auto_progress_bar.config(value=100)
+        self.status_label.config(text="Instagram scraping complete")
+        
+        # Refresh history
+        self._load_history()
+
+    def _show_instagram_profiles(self):
+        """Show the list of discovered Instagram profiles."""
+        profiles_file = "data/instagram_profiles.json"
+        
+        if not os.path.exists(profiles_file):
+            messagebox.showinfo(
+                "No Profiles Found",
+                "No Instagram profiles have been discovered yet. Run the Instagram scraper first."
+            )
+            return
+        
+        try:
+            with open(profiles_file, 'r') as f:
+                data = json.load(f)
+                
+            if 'profiles' not in data or not data['profiles']:
+                messagebox.showinfo(
+                    "No Profiles Found",
+                    "No Instagram profiles have been discovered yet. Run the Instagram scraper first."
+                )
+                return
+            
+            # Create a new window to display profiles
+            profile_window = tk.Toplevel(self.dialog)
+            profile_window.title("Discovered Instagram Profiles")
+            profile_window.geometry("500x600")
+            profile_window.transient(self.dialog)
+            
+            # Frame for the profile list
+            frame = ttk.Frame(profile_window, padding=10)
+            frame.pack(fill=tk.BOTH, expand=True)
+            
+            # Title
+            ttk.Label(
+                frame, 
+                text=f"Discovered Instagram Profiles ({len(data['profiles'])})",
+                font=("Helvetica", 12, "bold")
+            ).pack(pady=10)
+            
+            # Last updated
+            if 'last_updated' in data:
+                ttk.Label(
+                    frame,
+                    text=f"Last Updated: {data['last_updated']}"
+                ).pack(pady=5)
+            
+            # Create a Text widget with scrollbar
+            profile_frame = ttk.Frame(frame)
+            profile_frame.pack(fill=tk.BOTH, expand=True, pady=10)
+            
+            profile_text = tk.Text(profile_frame, wrap=tk.WORD, height=20, width=40)
+            profile_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+            
+            scrollbar = ttk.Scrollbar(profile_frame, command=profile_text.yview)
+            scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+            profile_text.config(yscrollcommand=scrollbar.set)
+            
+            # Insert profiles
+            for profile in data['profiles']:
+                profile_text.insert(tk.END, f"@{profile}\n")
+            
+            profile_text.config(state="disabled")  # Make read-only
+            
+            # Buttons
+            button_frame = ttk.Frame(frame)
+            button_frame.pack(fill=tk.X, pady=10)
+            
+            ttk.Button(
+                button_frame,
+                text="Close",
+                command=profile_window.destroy
+            ).pack(side=tk.RIGHT, padx=5)
+            
+            ttk.Button(
+                button_frame,
+                text="Open File Location",
+                command=lambda: os.startfile(os.path.dirname(os.path.abspath(profiles_file)))
+            ).pack(side=tk.LEFT, padx=5)
+        except Exception as e:
+            self.logger.error(f"Error showing Instagram profiles: {e}")
+            messagebox.showerror(
+                "Error",
+                f"Failed to load Instagram profiles: {e}"
+            )

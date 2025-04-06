@@ -24,9 +24,9 @@ class ImageDownloader:
                 fallback='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
         }
         
-        self.concurrent_downloads = self.config.getint('Downloader', 'ConcurrentDownloads', fallback=20)
+        self.concurrent_downloads = self.config.getint('Downloader', 'ConcurrentDownloads', fallback=100)  # Increased from 20
         self.retry_count = self.config.getint('Downloader', 'RetryCount', fallback=3)
-        self.timeout = self.config.getint('Downloader', 'Timeout', fallback=30)
+        self.timeout = self.config.getint('Downloader', 'Timeout', fallback=5)
         
         # Get the download directory from config
         self.base_download_dir = self.config.get('Paths', 'DownloadFolder', fallback='data/downloaded_images')
