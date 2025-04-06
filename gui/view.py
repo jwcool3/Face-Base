@@ -125,21 +125,31 @@ class FaceMatcherView:
         self.back_button.config(state='normal' if has_previous else 'disabled')
         self.forward_button.config(state='normal' if has_next else 'disabled')
     
-    def update_match_info(self, similarity, source, resolution, age, gender):
-        """Update the match information text widget."""
+    def update_match_info(self, **match_info):
+        """Update the match information text widget with all available information."""
         # Clear the text widget
+        self.match_info_text.config(state='normal')
         self.match_info_text.delete('1.0', 'end')
         
-        # Add the match information
-        self.match_info_text.insert('end', f"Match Score: {similarity:.4f}\n\n")
-        self.match_info_text.insert('end', f"Source Image: {os.path.basename(source)}\n\n")
-        self.match_info_text.insert('end', f"Resolution: {resolution}\n\n")
-        self.match_info_text.insert('end', f"Age: {age}\n\n")
-        self.match_info_text.insert('end', f"Gender: {gender}\n\n")
+        # Format and display each piece of information
+        info_format = {
+            'similarity': ('Match Score', '{:.4f}'),
+            'source': ('Source Image', '{}'),
+            'resolution': ('Resolution', '{}'),
+            'age': ('Age', '{}'),
+            'gender': ('Gender', '{}'),
+            'pose': ('Pose', '{}'),
+            'timestamp': ('Timestamp', '{}')
+        }
+        
+        for key, (label, format_str) in info_format.items():
+            if key in match_info and match_info[key] not in (None, 'Unknown', ''):
+                value = format_str.format(match_info[key])
+                self.match_info_text.insert('end', f"{label}: {value}\n\n")
         
         # Disable editing
         self.match_info_text.config(state='disabled')
-        
+    
     # Image display methods
     def display_uploaded_image(self, image):
         """Display the uploaded image on the canvas."""

@@ -172,11 +172,16 @@ class FaceEncoder:
                         if cropped_face is None or cropped_face.size == 0:
                             continue
                             
+                        # Convert BGR to RGB for saving
+                        cropped_face_rgb = cv2.cvtColor(cropped_face, cv2.COLOR_BGR2RGB)
+                            
                         # Save the cropped face
                         face_filename = f"{os.path.splitext(os.path.basename(img_path))[0]}_face_{idx}.jpg"
                         cropped_face_path = os.path.join(self.cropped_face_folder, face_filename)
                         
-                        cv2.imwrite(cropped_face_path, cropped_face)
+                        # Save using PIL to ensure correct color space
+                        pil_image = Image.fromarray(cropped_face_rgb)
+                        pil_image.save(cropped_face_path, quality=95)
                         self.logger.debug(f"Saved cropped face: {cropped_face_path}")
                         
                         # Create face data entry
@@ -184,7 +189,7 @@ class FaceEncoder:
                             'image_source': img_path,
                             'img_path': cropped_face_path,
                             **face_info,
-                            'resolution': f"{cropped_face.shape[1]}x{cropped_face.shape[0]} Pixels",
+                            'resolution': f"{cropped_face_rgb.shape[1]}x{cropped_face_rgb.shape[0]} Pixels",
                             'folder_name': os.path.basename(os.path.dirname(img_path))
                         }
                         

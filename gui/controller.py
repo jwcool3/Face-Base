@@ -81,8 +81,8 @@ class FaceMatcherController:
             image_path (str): Path to the image file.
         """
         try:
-            # Open the original image
-            original_image = Image.open(image_path)
+            # Open the original image and convert to RGB
+            original_image = Image.open(image_path).convert('RGB')
             
             # Make a copy for face processing
             image = original_image.copy()
@@ -138,8 +138,8 @@ class FaceMatcherController:
             return
             
         try:
-            # Load the matched face image
-            matched_face = Image.open(matched_face_path)
+            # Load the matched face image and convert to RGB
+            matched_face = Image.open(matched_face_path).convert('RGB')
             
             # Apply overlays if enabled
             if self.model.landmarks_overlay_enabled and 'landmark_2d_106' in face_data:
@@ -157,7 +157,7 @@ class FaceMatcherController:
             
             # Try to display the source image if it exists
             if source_image_path and os.path.exists(source_image_path):
-                source_image = Image.open(source_image_path)
+                source_image = Image.open(source_image_path).convert('RGB')
                 
                 # Apply overlays to source image if needed
                 if self.model.age_gender_overlay_enabled:
@@ -169,14 +169,18 @@ class FaceMatcherController:
                     
                 self.view.display_full_matched_image(source_image)
             
-            # Update the match info text
-            self.view.update_match_info(
-                similarity=similarity,
-                source=source_image_path,
-                resolution=face_data.get('resolution', 'Unknown'),
-                age=face_data.get('age', 'Unknown'),
-                gender=face_data.get('gender', 'Unknown')
-            )
+            # Update the match info text with all available information
+            match_info = {
+                'similarity': similarity,  # Pass as float, not formatted string
+                'source': os.path.basename(source_image_path),
+                'resolution': face_data.get('resolution', 'Unknown'),
+                'age': face_data.get('age', 'Unknown'),
+                'gender': face_data.get('gender', 'Unknown'),
+                'pose': face_data.get('pose', 'Unknown'),
+                'timestamp': face_data.get('timestamp', 'Unknown')
+            }
+            
+            self.view.update_match_info(**match_info)
             
         except Exception as e:
             self.logger.error(f"Error displaying match results: {e}")
@@ -187,16 +191,24 @@ class FaceMatcherController:
         match = self.model.previous_match()
         
         if match:
+            # Update all displays with the new match
             self.display_match_results()
             self.update_navigation_buttons()
+            # Redisplay the current uploaded image with any active overlays
+            if self.model.current_image_path:
+                self.display_uploaded_image(self.model.current_image_path)
     
     def display_next_image(self):
         """Display the next match result."""
         match = self.model.next_match()
         
         if match:
+            # Update all displays with the new match
             self.display_match_results()
             self.update_navigation_buttons()
+            # Redisplay the current uploaded image with any active overlays
+            if self.model.current_image_path:
+                self.display_uploaded_image(self.model.current_image_path)
     
     def update_navigation_buttons(self):
         """Update the state of navigation buttons based on available matches."""
@@ -277,19 +289,11 @@ class FaceMatcherController:
         # Convert PIL image to numpy array for OpenCV
         image_np = np.array(image)
         
-        # Ensure image is in RGB format (OpenCV uses BGR)
-        if len(image_np.shape) == 2:  # Grayscale
-            image_np = cv2.cvtColor(image_np, cv2.COLOR_GRAY2RGB)
-        elif image_np.shape[2] == 4:  # RGBA
-            image_np = cv2.cvtColor(image_np, cv2.COLOR_RGBA2RGB)
-        elif image_np.shape[2] == 3:  # BGR (OpenCV default)
-            image_np = cv2.cvtColor(image_np, cv2.COLOR_BGR2RGB)
-        
-        # Draw the landmarks on the image
+        # Draw the landmarks on the image (image is already in RGB)
         for x, y in landmarks:
             cv2.circle(image_np, (int(x), int(y)), 2, (0, 255, 0), -1)
         
-        # Convert back to PIL image
+        # Convert back to PIL image (no need to convert color space since we maintained RGB)
         return Image.fromarray(image_np)
     
     @staticmethod
@@ -307,14 +311,6 @@ class FaceMatcherController:
         """
         # Convert PIL image to numpy array for OpenCV
         image_np = np.array(image)
-        
-        # Ensure image is in RGB format (OpenCV uses BGR)
-        if len(image_np.shape) == 2:  # Grayscale
-            image_np = cv2.cvtColor(image_np, cv2.COLOR_GRAY2RGB)
-        elif image_np.shape[2] == 4:  # RGBA
-            image_np = cv2.cvtColor(image_np, cv2.COLOR_RGBA2RGB)
-        elif image_np.shape[2] == 3:  # BGR (OpenCV default)
-            image_np = cv2.cvtColor(image_np, cv2.COLOR_BGR2RGB)
         
         # Format the text
         if age is not None and gender is not None:
@@ -349,5 +345,5 @@ class FaceMatcherController:
                 font_thickness
             )
         
-        # Convert back to PIL image
+        # Convert back to PIL image (no need to convert color space since we maintained RGB)
         return Image.fromarray(image_np)
